@@ -1,6 +1,7 @@
 # Balancing Truthfulness and Informativeness with Uncertainty-Aware Instruction Fine-Tuning </a>
 UNIT-Ref is a novel IFT paradigm to address hallucination by teaching LLMs to recognize their uncertainty and explicitly reflect it at the end of their responses. This is the official repository for [our paper](https://arxiv.org/abs/2502.11962).
 
+![Method Illustration](method_illustration_long.pdf)
 
 ## Setup
 First, install python dependences
@@ -19,35 +20,72 @@ deactivate
 ```
 
 ## Prepare the Training Dataset
-### To probe the CCP uncertainty given a dataset
-For example to obtain Qwen/Qwen2.5-14B 's CCP uncertainty on an IFT dataset (e.g. lima.jsonl), download and put the lima.jsonl dataset into the folder data_to_probe_ccp and run:
-```console
-bash eval_pipeline.sh --model_name Qwen/Qwen2.5-14B --get_ccp_from_response lima.jsonl
-```
-You will find the result in evaluate_database/calibration_result/lima_calibrated_Qwen_Qwen2.5-14B.jsonl
 
-### To classify the infomation-seeking tasks within a dataset
-Then, to classify the information-seeking tasks within a dataset
+### To probe the CCP uncertainty given a dataset
+To create uncertainty-aware training data, we first need to probe the Claim-Conditioned Probability (CCP) uncertainty of a base model on an Instruction Fine-Tuning (IFT) dataset. This step is crucial as it identifies which parts of the model's responses are uncertain, which will later be used to guide the training process.
+
+For example, to obtain Qwen/Qwen2.5-14B's CCP uncertainty on an IFT dataset (e.g. lfrqa.jsonl), download and put the lfrqa.jsonl dataset into the folder `data_to_probe_ccp` and run:
+```console
+bash eval_ccp.sh --model_name Qwen/Qwen2.5-14B --get_ccp_from_response datasets/lfrqa.jsonl
+```
+
+This command will:
+1. Load the specified model (Qwen/Qwen2.5-14B)
+2. Process each instruction-response pair in the dataset
+3. Extract atomic claims from the responses
+4. Calculate CCP uncertainty scores for each claim
+
+You will find the result in `evaluate_database/calibration_result/lfrqa_calibrated_Qwen_Qwen2.5-14B.jsonl`. The output file contains:
+- `instruction`: Original instructions from the dataset
+- `response`: Model's original responses
+- `claim_uncertainty`: a list containing dictionaries recording each claim with their ccp values.
+
+### To classify the information-seeking tasks within a dataset
+After obtaining CCP uncertainty scores, we need to identify which instructions are information-seeking tasks (as opposed to creative or reasoning tasks). This classification is important because UNIT methods are specifically designed for information-seeking scenarios where factual accuracy is paramount.
+
 ```console
 cd src
 python instruction_classification.py \
-    --instruction_file evaluate_database/calibration_result/lima_calibrated_Qwen_Qwen2.5-14B.jsonl \
-    --output_file train_data/lima_calibrated_Qwen_Qwen2.5-14B_labelled.jsonl \
+    --instruction_file evaluate_database/calibration_result/lfrqa_calibrated_Qwen_Qwen2.5-14B.jsonl \
+    --output_file train_data/lfrqa_calibrated_Qwen_Qwen2.5-14B_labelled.jsonl \
     --llm gpt-4o \
     --batch 20
 ```
 
+This script will:
+1. Analyze each instruction in the dataset
+2. Use GPT-4o to classify the task of the instruction is asking.
+4. Add classification labels to the dataset
+
+The output file will include an additional field:
+- `primary_tag`: primary task/genre of the instruction.   
+- `other_tags`: other task/genre of the instruction.
 
 ### 1. UNIT-Reflection Dataset
+The UNIT-Reflection dataset teaches models to explicitly acknowledge uncertainty by adding reflection sections to their responses. This approach maintains the original response while reflecting on uncertain claims.
+
 To obtain the UNIT-Reflection Dataset, run:
 ```console
 cd src
-python make_data.py\
-    --input_file evaluate_database/calibration_result/lima_calibrated_Qwen_Qwen2.5-14B_labelled.jsonl \
-    --output_file train_data/lima_calibrated_Qwen_Qwen2.5-14B_unit_reflect.jsonl \
+python make_data_ref.py\
+    --input_file train_data/lfrqa_calibrated_Qwen_Qwen2.5-14B_labelled.jsonl \
+    --output_file train_data/lfrqa_calibrated_Qwen_Qwen2.5-14B_unit_reflect.jsonl \
 ```
 
+This script will:
+1. Process each information-seeking only instruction from the labeled dataset
+2. Identify uncertain claims based on CCP scores
+3. Generate reflection sections that explicitly acknowledge uncertainty
+4. Create training examples where responses include both the original answer and a reflection on uncertain content
+
+The resulting dataset format includes:
+- Original instruction-response pairs
+- Added reflection sections highlighting uncertain claims
+- Maintained informativeness while increasing honesty
+
 ### 2. UNIT-Cut Dataset
+The UNIT-Cut dataset takes a different approach by removing uncertain content entirely, creating more conservative but highly truthful responses. This method prioritizes truthfulness over informativeness.
+
 To obtain the UNIT-Cut Dataset, run:
 ```console
 cd src
@@ -57,6 +95,19 @@ python make_data_cut.py\
     --output_file train_data/lima_calibrated_Qwen_Qwen2.5-14B_unit_cut.jsonl \
     --llm gpt-4o
 ```
+
+This script will:
+1. Identify uncertain claims in the original responses using CCP scores
+2. Use GPT-4o to intelligently remove uncertain content while maintaining coherence
+3. Ensure the remaining content flows naturally after uncertain parts are removed
+4. Create training examples with conservative, high-confidence responses
+
+The resulting dataset features:
+- Shortened responses with uncertain content removed
+- Higher truthfulness at the cost of some informativeness
+- Maintained response quality and coherence
+
+**Note**: Both UNIT-Reflection and UNIT-Cut datasets require the previous steps (CCP probing and instruction classification) to be completed first, as they depend on uncertainty scores and information-seeking labels to create effective training data.
 
 
 ## Training
@@ -69,16 +120,16 @@ We used [Alignment Handbook](https://github.com/huggingface/alignment-handbook/t
 To evaluate the fine-tuned checkpoints with CCP Balanced Accuracy on datasets Biography (bio) or WildHalu, run:
 ```console
 cd src/bash_scripts/eval_ccp.sh
-bash eval_ccp.sh --model_name your_checkpoint_path --test_data [bio|wildhalu]
+bash eval_ccp.sh --model_name your_checkpoint_path --test_data [bio|wildhalu] --output_files results/qwen25_limalfrqa01_reflect_bio.jsonl
 ```
-- `Input Files`: TODO
+- `model_name`: address to your fine-tuned checkpoint_path
 - `Output Files`: results/qwen25_limalfrqa01_reflect_bio.jsonl Useful Fields:
     - `instruction`: Instructions from bio or wildhalu dataset.
     - `response`: Response of the target checkpoint.
     - `claim_uncertainty`: Atomic claims and their CCP uncertainty scores.
     - `reflected_answer_claims`: Answer claims that are marked uncertain by the reflection section.
     - `unreflected_answer_claim`: Answer claims NOT flagged by the reflection section.
-- `CCP-Based Scores`: TODO
+- `CCP-Based Scores`: CCP Diff, CCP Honesty will be printed out at the end of the script.
 
 ### Step 2: Computing Honesty Balanced Accuracy and Truthfulness using FactSCore
 
@@ -180,5 +231,7 @@ Then runs `eval_helpfulness.sh` which:
 
 ## Datasets
 This repository contains 2 types of datasets:
-- In datasets folder, we provide LIMA and LFRQA's dataset with their probed ccp values wrt. Llama3.1-8b and Qwen2.5-14B, uncertain claims and certain claims classified by quantile 75 is also included in these datasets.
+- In datasets folder, we provide:
+    1. LIMA and LFRQA's original datasets.
+    1. LIMA and LFRQA's dataset with their probed ccp values wrt. Llama3.1-8b and Qwen2.5-14B, uncertain claims and certain claims classified by quantile 75 is also included in these datasets.
 - In src/inference_data, we provide WildHalu (500 subset we used) and Biography datasets for evaluation.

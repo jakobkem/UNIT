@@ -15,9 +15,9 @@ import pandas as pd
 import json
 import bisect
 
-os.environ['HF_TOKEN']="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"
-# os.environ["OPENAI_API_KEY"] = "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"
-os.environ["OPENAI_API_KEY"] = "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"
+os.environ['HF_TOKEN']="xxx"
+os.environ["OPENAI_API_KEY"] = "xxx"
+
 class GPT_API_Caller:
 
     def __init__(self, model):
@@ -785,7 +785,7 @@ def main():
         print(f"    Precision Zero Division Count: {best_precision_zero_div_count_wo_p}")
         print(f"    Recall Zero Division Count: {best_recall_zero_div_count_wo_p}")
         print(f"    Specificity Zero Division Count: {best_specificity_zero_div_count_wo_p}")
-        print(f'    Best Macro (S+P)/2: {best_balanced_accuracy_wo_p}')
+        print(f'    Best Macro Balanced Accuracy: {best_balanced_accuracy_wo_p}')
         print(f"    Best Macro RAC/AC: {best_macro_rac_ac_wo_p}")
         print(f"    Best Micro RAC/AC: {best_micro_rac_ac_wo_p}")
         print(f"    Best Average Reflection Count: {best_average_reflection_count}")
@@ -797,6 +797,8 @@ def main():
         print(f"    Best correct's ccp deviation: {best_cor_error}")
         print(f"    Best Macro Incorrect's ccp deviation: {best_macro_incor_error_wo_p}")
         print(f"    Best Macro Correct's ccp deviation: {best_macro_cor_error_wo_p}")
+        print(f"    Best Macro CCP Balanced Accuracy: {best_macro_cor_error_wo_p}")
+        print(f"    Best CCP Honesty: {best_urac_ccp_wo_p - best_rac_ccp_wo_p}")
 
 
         # print(f"    Best Mean Error: {best_mean_error_wo_p}")
@@ -813,7 +815,6 @@ def main():
     print(f'    Last Precision Zero Division Count: {precision_zero_div_count}')
     print(f'    Last Recall Zero Division Count: {recall_zero_div_count}')
     print(f'    Last Specificity Zero Division Count: {specificity_zero_div_count}')
-    print(f'    Last (R+S)/2: {macro_balanced_accuracy}')
     print(f'    Last Macro RAC/AC: {macro_rac_ac}')
     print(f'    Last Micro RAC/AC: {micro_rac_ac}')
     print(f'    Last Average Reflection Count: {average_reflection_count}')
@@ -825,7 +826,8 @@ def main():
     print(f'    Last correct\'s ccp deviation: {cor_error}')
     print(f'    Last Macro Incorrect\'s ccp deviation: {macro_inc_error}')
     print(f'    Last Macro Correct\'s ccp deviation: {macro_cor_error}')
-    print(f'    Last ccp diff: {avg_urac_ccp-avg_rac_ccp}')
+    print(f'    Last Macro CCP Balanced Accuracy: {macro_balanced_accuracy}')
+    print(f'    Last CCP diff: {avg_urac_ccp-avg_rac_ccp}')
 
     # save the final result
     df.to_json(args.output_file, index=False, orient='records', lines=True)

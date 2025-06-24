@@ -20,6 +20,7 @@ USER_SPECIFIED_FILE=""
 SURGERY_MODEL='llama'
 ONLY_INFERENCE=false
 CONFIG_FILE="../inference_configs/eval_inference_config.yaml"
+OUTPUT_FILE=""          # New flag for custom output file path
 
 # ------------------------------
 # Ensure required folder layout exists
@@ -137,9 +138,13 @@ while [[ $# -gt 0 ]]; do
             STEP_ARGS_PROVIDED=true
             shift
             ;;
+        --output_file)
+            OUTPUT_FILE="$2"
+            shift 2
+            ;;
         *)
             echo "Unknown parameter passed: $1"
-            echo "Usage: bash script.sh [--quantile QUANTILE] [--finetune_method FINETUNE_METHOD] [--base_model BASE_MODEL] [--model_name MODEL_NAME] [--train_data TRAIN_DATA] [--test_data TEST_DATA] [--normal_prompt] [--inference] [--extract] [--match] [--final] [--compute_ccp] [--evaluate_calibration] [--get_ccp_from_response FILEPATH] [--only_inference]"
+            echo "Usage: bash script.sh [--quantile QUANTILE] [--finetune_method FINETUNE_METHOD] [--base_model BASE_MODEL] [--model_name MODEL_NAME] [--train_data TRAIN_DATA] [--test_data TEST_DATA] [--normal_prompt] [--inference] [--extract] [--match] [--final] [--compute_ccp] [--evaluate_calibration] [--get_ccp_from_response FILEPATH] [--only_inference] [--output_file OUTPUT_FILE]"
             exit 1
             ;;
     esac
@@ -208,7 +213,7 @@ fi
 # Construct the cache name
 # ------------------------------
 if [ "$GET_CCP_FROM_RESPONSE" = true ]; then
-    # Remove any trailing .jsonl so we don’t get abcd.jsonl_calibrated.jsonl
+    # Remove any trailing .jsonl so we don't get abcd.jsonl_calibrated.jsonl
     CACHE_NAME="$(basename "$USER_SPECIFIED_FILE" .jsonl)"
 else
     CACHE_NAME="${TRAIN_DATA}_q${QUANTILE}_${FINETUNE_METHOD}_${TEST_DATA}"
@@ -224,7 +229,7 @@ fi
 if [ -z "$MODEL_NAME" ]; then
     CACHE_NAME="${CACHE_NAME}_${SURGERY_MODEL}_${BASE_MODEL}"
 else
-    # Keep only the part after the final “/”  →  e.g. home/checkpoints/llama-checkpoint1 → llama-checkpoint1
+    # Keep only the part after the final "/"  →  e.g. home/checkpoints/llama-checkpoint1 → llama-checkpoint1
     MODEL_BASE="${MODEL_NAME##*/}"
     CACHE_NAME="${CACHE_NAME}_${MODEL_BASE}"
 fi
@@ -299,6 +304,8 @@ FINAL_FILE_NAME="${EVALUATE_DIR}${CACHE_NAME}_final.json"
 
 CCP_OUTPUT_FILE_NAME="${EVALUATE_DIR}ccp_only/${CACHE_NAME}_ccp.json"
 CCP_CACHE_FILE="${EVALUATE_DIR}ccp_only/${CACHE_NAME}_ccp_cache.json"
+
+# Always use the default naming for the main output
 CALIBRATION_OUTPUT_FILE_NAME="${EVALUATE_DIR}calibration_result/${CACHE_NAME}_calibrated.jsonl"
 
 # ------------------------------
@@ -624,6 +631,12 @@ if [ "$RUN_EVALUATE_CALIBRATION" = true ]; then
             --input_file "$CCP_OUTPUT_FILE_NAME" \
             --output_file "$CALIBRATION_OUTPUT_FILE_NAME" \
             --ccp_threshold "$ccp_threshold"
+    fi
+
+    # If user specified a custom output file, copy the result there as well
+    if [ -n "$OUTPUT_FILE" ]; then
+        echo "Copying result to custom output file: $OUTPUT_FILE"
+        cp "$CALIBRATION_OUTPUT_FILE_NAME" "$OUTPUT_FILE"
     fi
 
     echo "evaluate_calibration" >> "$STATUS_FILE"
