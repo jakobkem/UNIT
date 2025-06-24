@@ -1,7 +1,7 @@
 # Balancing Truthfulness and Informativeness with Uncertainty-Aware Instruction Fine-Tuning </a>
 UNIT-Ref is a novel IFT paradigm to address hallucination by teaching LLMs to recognize their uncertainty and explicitly reflect it at the end of their responses. This is the official repository for [our paper](https://arxiv.org/abs/2502.11962).
 
-![Method Illustration](method_illustration_long.pdf)
+![Method Illustration](method_illustration_long.png)
 
 ## Setup
 First, install python dependences
