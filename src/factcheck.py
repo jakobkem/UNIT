@@ -12,11 +12,26 @@ import random
 import pandas as pd
 import os
 import argparse
+import unicodedata
 from wild_retrieval import WildRetrieval
 from factscore_retrieval import DocDB, Retrieval
 from tqdm import tqdm
 from datasets import load_dataset
 import pickle
+
+
+def sanitize_text(text):
+    """Remove control characters and null bytes that break JSON serialization for OpenAI API calls."""
+    if not isinstance(text, str):
+        return text
+    # Remove null bytes
+    text = text.replace('\x00', '')
+    # Remove other control characters (keep newlines, tabs, carriage returns)
+    text = ''.join(
+        ch for ch in text
+        if ch in ('\n', '\r', '\t') or not unicodedata.category(ch).startswith('C')
+    )
+    return text
 
 
 MODEL_DICT = {
@@ -384,6 +399,8 @@ async def create_answers_async(model, messages, cache_path, batch_size=5, seed=4
                 except Exception as e:
                     print(f"Batch {i} Error while gathering answers: {e}")
                     error_batches.append(i)
+                    # Fill placeholders so output length stays consistent
+                    all_answers.extend([""] * len(batch))
 
     return all_answers
 
@@ -478,7 +495,7 @@ def main():
                         context += "\n---\n" + psg.strip(' \n')
                     else:
                         context += psg.strip(' \n')
-                prompts.append(USER_PROMPT.format(input=input_question, claim=claim, context=context))
+                prompts.append(USER_PROMPT.format(input=sanitize_text(input_question), claim=sanitize_text(claim), context=sanitize_text(context)))
         with open(args.prompt_file, 'w') as f:
             json.dump({'claims_idx': claims_idx, 'prompts': prompts, 'inputs': inputs, 'claims': claims}, f)
     else:
@@ -490,12 +507,12 @@ def main():
         claims = prompt_obj['claims']
 
     async def api_call():
-        messages = [[{'role': 'system', 'content': SYSTEM_PROMPT}, {'role': 'user', 'content': p}] for p in prompts]
+        messages = [[{'role': 'system', 'content': SYSTEM_PROMPT}, {'role': 'user', 'content': sanitize_text(p)}] for p in prompts]
         cache_path_fc = os.path.join('openai_cache', f"{args.cache_name}_fc.diskcache")
         responses = await create_answers_async(MODEL_DICT[args.llm], messages, cache_path_fc, batch_size=args.llm_batch_size)
         # responses = ask_open_ai(args, prompts, batch_result=args.batch_result_fc, sub_cache_name='fc', real_time=args.fc_real_time)
-        summary_prompts = [SUMMARY_PROMPT.format(claim=c, input=i, reply=response) for c, i, response in zip(claims, inputs, responses)]
-        summary_messages = [[{'role': 'system', 'content': SYSTEM_PROMPT}, {'role': 'user', 'content': p}] for p in summary_prompts]
+        summary_prompts = [SUMMARY_PROMPT.format(claim=sanitize_text(c), input=sanitize_text(i), reply=sanitize_text(response)) for c, i, response in zip(claims, inputs, responses)]
+        summary_messages = [[{'role': 'system', 'content': SYSTEM_PROMPT}, {'role': 'user', 'content': sanitize_text(p)}] for p in summary_prompts]
         cache_path_sum = os.path.join('openai_cache', f"{args.cache_name}_sum.diskcache")
         summaries = await create_answers_async(MODEL_DICT[args.llm], summary_messages, cache_path_sum, batch_size=args.llm_batch_size)
         return responses, summaries

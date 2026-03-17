@@ -7,7 +7,22 @@ import re
 import os
 import sys
 import asyncio
+import unicodedata
 from make_data_cut import create_answers_async, GENE_ARGS_DICT
+
+
+def sanitize_text(text):
+    """Remove control characters and null bytes that break JSON serialization for OpenAI API calls."""
+    if not isinstance(text, str):
+        return text
+    # Remove null bytes
+    text = text.replace('\x00', '')
+    # Remove other control characters (keep newlines, tabs, carriage returns)
+    text = ''.join(
+        ch for ch in text
+        if ch in ('\n', '\r', '\t') or not unicodedata.category(ch).startswith('C')
+    )
+    return text
 
 
 EXTRACTION_PROMPT = """Break down the following sentence into atomic facts.
@@ -50,12 +65,13 @@ async def main():
     for idx, text in tqdm(enumerate(df['output']), total=len(df['output']), desc='Get prompts'):
         if "I am unconfident to precisely" in text:
             continue
+        text = sanitize_text(text)
         if isinstance(text, str) and re.search(r'\w+', text):
             doc = nlp(text)
         else:
             continue
         for sent in doc.sentences:
-            all_sentences.append(sent.text)
+            all_sentences.append(sanitize_text(sent.text))
             sentence_idx.append(idx)
         if len(text) > 0 and text[-1] not in sent_separator:
             all_sentences = all_sentences[:-1]

@@ -235,6 +235,8 @@ async def create_answers_async(model, messages, cache_path, generation_args, bat
                 except Exception as e:
                     print(f"Batch {i} Error while gathering answers: {e}")
                     error_batches.append(i)
+                    # Fill placeholders so output length stays consistent
+                    all_answers.extend([""] * len(batch))
 
     input_price = get_input_price(model, total_input_tok_num)
     output_price = get_output_price(model, total_output_tok_num)
