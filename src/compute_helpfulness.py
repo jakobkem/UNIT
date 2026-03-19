@@ -334,28 +334,47 @@ def main():
     parser.add_argument("--sample", type=int, default=-1)
     args = parser.parse_args()
 
-    assistant_a = []
+    def _load_by_entity(filepath):
+        """Load a factchecked JSONL into a dict keyed by entity name."""
+        entries = {}
+        with open(filepath) as f:
+            for line in f:
+                obj = json.loads(line)
+                entity = obj['entity']
+                response = obj['response'] if '<reflection>' not in obj['response'] else obj['response'].split('<reflection>')[0].strip('\n ')
+                response = response.replace('<|endoftext|>', '')
+                entries[entity] = response
+        return entries
+
+    entries_a = _load_by_entity(args.assistant_a)
+    entries_b = _load_by_entity(args.assistant_b)
+
+    # Only evaluate entities where both models gave a non-refusal answer
+    common_entities = sorted(set(entries_a.keys()) & set(entries_b.keys()))
+    only_in_a = set(entries_a.keys()) - set(entries_b.keys())
+    only_in_b = set(entries_b.keys()) - set(entries_a.keys())
+    if only_in_a:
+        print(f"WARNING: {len(only_in_a)} entities only in assistant_a (skipped): {sorted(only_in_a)[:5]}{'...' if len(only_in_a) > 5 else ''}")
+    if only_in_b:
+        print(f"WARNING: {len(only_in_b)} entities only in assistant_b (skipped): {sorted(only_in_b)[:5]}{'...' if len(only_in_b) > 5 else ''}")
+    print(f"Evaluating {len(common_entities)} common entities (a={len(entries_a)}, b={len(entries_b)})")
+
+    if not common_entities:
+        raise ValueError(
+            f"No common entities found between assistant_a ({args.assistant_a}) "
+            f"and assistant_b ({args.assistant_b}). Cannot compute helpfulness."
+        )
+
     questions = []
-    with open(args.assistant_a) as f:
-        for line in f.readlines():
-            obj = json.loads(line)
-            response = obj['response'] if '<reflection>' not in obj['response'] else obj['response'].split('<reflection>')[0].strip('\n ')
-            response = response.replace('<|endoftext|>', '')
-            assistant_a.append(response)
-            if args.data == 'bio':
-                questions.append(f"Tell me a bio of {obj['entity']}.")
-            else:
-                questions.append(f"In a paragraph, could you tell me what you know about {obj['entity']}")
-
+    assistant_a = []
     assistant_b = []
-    with open(args.assistant_b) as f:
-        for line in f.readlines():
-            obj = json.loads(line)
-            response = obj['response'] if '<reflection>' not in obj['response'] else obj['response'].split('<reflection>')[0].strip('\n ')
-            response = response.replace('<|endoftext|>', '')
-            assistant_b.append(response)
-
-    print(len(assistant_a), len(assistant_b), len(questions))
+    for entity in common_entities:
+        if args.data == 'bio':
+            questions.append(f"Tell me a bio of {entity}.")
+        else:
+            questions.append(f"In a paragraph, could you tell me what you know about {entity}")
+        assistant_a.append(entries_a[entity])
+        assistant_b.append(entries_b[entity])
 
     prompts_to_run = []
     for answer_a, answer_b, prompt in zip(assistant_a, assistant_b, questions):
@@ -365,6 +384,12 @@ def main():
     # print(prompts_to_run[0])
 
     responses = ask_open_ai(args, prompts_to_run, batch_result=args.batch_result, system_prompt=SYSTEM_PROMPT_JUDGE, sub_cache_name='h', real_time=args.real_time)
+
+    if len(responses) != len(prompts_to_run):
+        raise ValueError(
+            f"Expected {len(prompts_to_run)} responses from ask_open_ai but got {len(responses)}. "
+            "This indicates some API calls were silently dropped."
+        )
 
     forward_responses = [response for i, response in enumerate(responses) if i % 2 == 0]
     backward_responses = [response for i, response in enumerate(responses) if i % 2 == 1]
